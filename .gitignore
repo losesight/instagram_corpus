@@ -1,0 +1,4 @@
+session.json
+*_session.json
+.DS_Store
+.venv/
