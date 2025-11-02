@@ -1,22 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark"> <!-- Dark theme enabled -->
     <head>
         <meta charset="utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-        <title>Instagram Sync Dashboard</title>
+        <title>Insta-Sync Terminal</title>
         
-        <!-- This link tells Flask to find the styles.css file in your 'static/css' folder -->
         <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
-        
         <script src="https://use.fontawesome.com/releases/v6.3.0/js/all.js" crossorigin="anonymous"></script>
+        
+        <!-- NEW: Terminal-style font -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+        
+        <style>
+            body, .navbar-brand, h1, h2, h3, h4, .card-title, .card-header, table {
+                font-family: 'Fira Code', monospace;
+            }
+            .status-success { color: #198754; font-weight: bold; }
+            .status-error { color: #dc3545; font-weight: bold; }
+            #log-details {
+                background-color: #212529;
+                color: #adb5bd;
+                font-family: 'Fira Code', monospace;
+                white-space: pre-wrap; /* Allows text to wrap */
+                word-wrap: break-word; /* Breaks long lines */
+                max-height: 60vh;
+                overflow-y: auto;
+            }
+        </style>
     </head>
     <body class="sb-nav-fixed">
         <nav class="sb-topnav navbar navbar-expand navbar-dark bg-dark">
-            <!-- Navbar Brand-->
-            <a class="navbar-brand ps-3" href="/">Instagram Sync</a>
-            <!-- Sidebar Toggle (optional, but nice to have) -->
-            <button class="btn btn-link btn-sm order-1 order-lg-0 me-4 me-lg-0" id="sidebarToggle" href="#!"><i class="fas fa-bars"></i></button>
+            <a class="navbar-brand ps-3" href="/">[Insta-Sync Terminal]</a>
         </nav>
         <div id="layoutSidenav">
             <div id="layoutSidenav_nav">
@@ -25,127 +41,165 @@
                         <div class="nav">
                             <div class="sb-sidenav-menu-heading">Core</div>
                             <a class="nav-link" href="/">
-                                <div class="sb-nav-link-icon"><i class="fas fa-tachometer-alt"></i></div>
+                                <div class="sb-nav-link-icon"><i class="fas fa-terminal"></i></div>
                                 Dashboard
                             </a>
                         </div>
-                    </div>
-                    <div class="sb-sidenav-footer">
-                        <div class="small">Status:</div>
-                        Running on Railway
                     </div>
                 </nav>
             </div>
             <div id="layoutSidenav_content">
                 <main>
                     <div class="container-fluid px-4">
-                        <h1 class="mt-4">Dashboard</h1>
-                        <ol class="breadcrumb mb-4">
-                            <li class="breadcrumb-item active">Activity Log</li>
-                        </ol>
+                        <h1 class="mt-4">> Dashboard_</h1>
+                        
+                        {% if db_not_found %}
+                        <div class="alert alert-warning mt-4">Database not found. Please wait for the first cron job to run.</div>
+                        {% else %}
 
-                        <!-- STAT CARDS TO SHOW TOTALS -->
+                        <!-- NEW: Live Stats Row -->
+                        <div class="row mt-4">
+                            <div class="col-xl-4 col-md-6">
+                                <div class="card bg-primary text-white mb-4">
+                                    <div class="card-body">Followers: <span class="fs-4">{{ stats.follower_count }}</span></div>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-6">
+                                <div class="card bg-info text-white mb-4">
+                                    <div class="card-body">Following: <span class="fs-4">{{ stats.following_count }}</span></div>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-12">
+                                <div class="card bg-secondary text-white mb-4">
+                                    <div class="card-body">Follower/Following Ratio: <span class="fs-4">{{ stats.ratio }}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- NEW: Run History Log Table -->
+                        <div class="card mb-4">
+                            <div class="card-header"><i class="fas fa-history me-1"></i>> Run_History_</div>
+                            <div class="card-body">
+                                <table class="table table-hover">
+                                    <thead><tr><th>Time</th><th>Status</th><th>Summary</th><th>Details</th></tr></thead>
+                                    <tbody>
+                                        {% for log in run_logs %}
+                                        <tr>
+                                            <td>{{ log['run_time'] }}</td>
+                                            <td><span class="status-{{ 'success' if log['status'] == 'SUCCESS' else 'error' }}">{{ log['status'] }}</span></td>
+                                            <td>{{ log['summary'] }}</td>
+                                            <td>
+                                                <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#logModal" data-log-details="{{ log['details'] }}">
+                                                    View Log
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <div class="row">
-                            <div class="col-xl-6 col-md-6">
-                                <div class="card bg-danger text-white mb-4">
+                            <!-- Unfollowed Table -->
+                            <div class="col-lg-6">
+                                <div class="card mb-4">
+                                    <div class="card-header"><i class="fas fa-user-minus me-1"></i>> Unfollowed_Users [{{ unfollow_count }}]</div>
                                     <div class="card-body">
-                                        <h4>Total Unfollowed Users</h4>
-                                        <h2 class="display-5">{{ unfollow_count }}</h2>
+                                        <table class="table">
+                                            <thead><tr><th>Username</th><th>Timestamp</th></tr></thead>
+                                            <tbody>
+                                                {% for user in unfollowed_users %}
+                                                <tr>
+                                                    <td><a href="https://instagram.com/{{ user['username'] }}" target="_blank">{{ user['username'] }}</a></td>
+                                                    <td>{{ user['timestamp'] }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-xl-6 col-md-6">
-                                <div class="card bg-warning text-white mb-4">
+                            <!-- Removed Table -->
+                            <div class="col-lg-6">
+                                <div class="card mb-4">
+                                    <div class="card-header"><i class="fas fa-user-slash me-1"></i>> Removed_Followers [{{ remove_count }}]</div>
                                     <div class="card-body">
-                                        <h4>Total Removed Followers</h4>
-                                        <h2 class="display-5">{{ remove_count }}</h2>
+                                        <table class="table">
+                                            <thead><tr><th>Username</th><th>Timestamp</th></tr></thead>
+                                            <tbody>
+                                                {% for user in removed_followers %}
+                                                <tr>
+                                                    <td><a href="https://instagram.com/{{ user['username'] }}" target="_blank">{{ user['username'] }}</a></td>
+                                                    <td>{{ user['timestamp'] }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </div>
                         </div>
-
-                        <!-- RECENTLY UNFOLLOWED TABLE -->
-                        <div class="card mb-4">
-                            <div class="card-header">
-                                <i class="fas fa-table me-1"></i>
-                                Recently Unfollowed Users
-                            </div>
-                            <div class="card-body">
-                                <table id="unfollowedTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Username</th>
-                                            <th>Timestamp</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <!-- THIS IS THE PYTHON LOOP -->
-                                        {% for user in unfollowed_users %}
-                                        <tr>
-                                            <td><a href="https://instagram.com/{{ user['username'] }}" target="_blank">{{ user['username'] }}</a></td>
-                                            <td>{{ user['timestamp'] }}</td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- RECENTLY REMOVED TABLE -->
-                        <div class="card mb-4">
-                            <div class="card-header">
-                                <i class="fas fa-table me-1"></i>
-                                Recently Removed Followers
-                            </div>
-                            <div class="card-body">
-                                <table id="removedTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Username</th>
-                                            <th>Timestamp</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <!-- THIS IS THE PYTHON LOOP -->
-                                        {% for user in removed_followers %}
-                                        <tr>
-                                            <td><a href="https://instagram.com/{{ user['username'] }}" target="_blank">{{ user['username'] }}</a></td>
-                                            <td>{{ user['timestamp'] }}</td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        {% endif %}
                     </div>
                 </main>
-                <footer class="py-4 bg-light mt-auto">
-                    <div class="container-fluid px-4">
-                        <div class="d-flex align-items-center justify-content-between small">
-                            <div class="text-muted">Copyright &copy; Your Instagram Bot 2025</div>
-                        </div>
-                    </div>
-                </footer>
             </div>
         </div>
-        
-        <!-- These script links tell Flask to find the JS files in your 'static/js' folder -->
+
+        <!-- NEW: Bootstrap Modal for viewing log details -->
+        <div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="logModalLabel">> Detailed_Run_Log_</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <pre id="log-details"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
         <script src="{{ url_for('static', filename='js/scripts.js') }}"></script>
-        <script src="https://cdn.jsdelivr.net/npm/simple-datatables@7.1.2/dist/umd/simple-datatables.min.js" crossorigin="anonymous"></script>
-
-        <!-- Custom script to initialize both tables -->
+        
+        <!-- NEW: JavaScript to power the log viewer modal -->
         <script>
-            window.addEventListener('DOMContentLoaded', event => {
-                const unfollowedTable = document.getElementById('unfollowedTable');
-                if (unfollowedTable) {
-                    new simpleDatatables.DataTable(unfollowedTable);
-                }
-                const removedTable = document.getElementById('removedTable');
-                if (removedTable) {
-                    new simpleDatatables.DataTable(removedTable);
-                }
+            const logModal = document.getElementById('logModal');
+            logModal.addEventListener('show.bs.modal', event => {
+                const button = event.relatedTarget;
+                const logDetails = button.getAttribute('data-log-details');
+                const modalBodyPre = logModal.querySelector('#log-details');
+                modalBodyPre.textContent = logDetails;
             });
         </script>
     </body>
-</html>
+</html>```
+
+### Step 4: Add the Whitelist to Railway
+
+Your new script looks for an environment variable named `WHITELIST`. You need to add this in your Railway dashboard.
+
+1.  Go to your project on Railway and click into your service.
+2.  Go to the **Variables** tab.
+3.  Click **+ New Variable**.
+4.  **Variable Name:** `WHITELIST`
+5.  **Value:** A comma-separated list of Instagram usernames you want to protect. **Do not put spaces after the commas.**
+    *   *Example:* `nasa,elonmusk,a_friend_of_mine,another_user`
+
+### Step 5: Deploy the New Version
+
+You've updated all the code. Now, just push it to GitHub.
+
+In your terminal, run the standard commands:
+
+```bash
+# Stage all the changes
+git add .
+
+# Commit the changes with a descriptive message
+git commit -m "feat: Add terminal UI, run history, stats, and whitelist"
+
+# Push to GitHub
+git push origin main
