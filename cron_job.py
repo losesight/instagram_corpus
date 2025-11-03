@@ -79,9 +79,7 @@ def run_sync():
     sys.stdout = captured_output = io.StringIO()
 
     try:
-        # --- NEW ROBUST SESSION HANDLING LOGIC ---
-
-        # 1. On the very first run, create the session file if it doesn't exist.
+        # --- ROBUST SESSION HANDLING LOGIC ---
         if not os.path.exists(SESSION_FILE):
             print("Session file not found. Attempting to create from environment variable...")
             session_json_data = os.getenv("INSTAGRAM_SESSION_JSON")
@@ -90,29 +88,20 @@ def run_sync():
                     f.write(session_json_data)
                 print("Successfully created session file from INSTAGRAM_SESSION_JSON variable.")
             else:
-                # This error will only happen if the session file is gone AND the variable is not set.
                 raise Exception("CRITICAL: Session file is missing and INSTAGRAM_SESSION_JSON variable is not set.")
 
-        # 2. Now that the file is guaranteed to exist, initialize the client and use it.
         print(f"--- Starting Sync Job at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
         cl = Client()
         cl.set_proxy(PROXY_URL)
-
         print(f"Loading session from {SESSION_FILE}...")
         cl.load_settings(SESSION_FILE)
-        
-        # 3. Perform a login to verify the session is still valid.
-        # This will refresh the session if needed without requiring 2FA.
         cl.login(ACCOUNT_USERNAME, ACCOUNT_PASSWORD)
-        cl.dump_settings(SESSION_FILE) # Save the potentially refreshed session
+        cl.dump_settings(SESSION_FILE)
         print("Session is valid and ready.")
-        
-        # --- SCRIPT CONTINUES AS NORMAL ---
         
         user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
         print("Fetching account information...")
-        # ***FIX APPLIED HERE: .dict() changed to .model_dump()***
         account_info = cl.user_info(user_id).model_dump()
         stats = {
             "username": account_info["username"],
@@ -125,7 +114,6 @@ def run_sync():
         print(f"Stats saved: {stats['follower_count']} followers, {stats['following_count']} following.")
         summary_log.append(f"Stats: {stats['follower_count']} followers, {stats['following_count']} following.")
 
-        # Whitelist Logic
         whitelist_ids = set()
         if WHITELIST_USERS and WHITELIST_USERS[0] != '':
             print(f"Processing whitelist: {WHITELIST_USERS}")
@@ -148,7 +136,6 @@ def run_sync():
         users_to_unfollow_initial = following_set - followers_set
         users_to_unfollow = users_to_unfollow_initial - whitelist_ids
         whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
-
         users_to_remove = followers_set - following_set
 
         print(f"\nAnalysis Complete:")
@@ -161,7 +148,9 @@ def run_sync():
         # UNFOLLOW LOGIC
         unfollowed_count = 0
         for uid in list(users_to_unfollow):
-            username = following.get(uid, {}).get('username', f'UserID: {uid}')
+            # ***FIX APPLIED HERE: Handle the new UserShort object***
+            user_short = following.get(uid)
+            username = user_short.username if user_short else f'UserID: {uid}'
             print(f"Attempting to unfollow: {username} ({uid})")
             if cl.user_unfollow(uid):
                 log_action(conn, "unfollow", uid, username)
@@ -173,7 +162,9 @@ def run_sync():
         # REMOVE FOLLOWER LOGIC
         removed_count = 0
         for uid in list(users_to_remove):
-            username = followers.get(uid, {}).get('username', f'UserID: {uid}')
+            # ***FIX APPLIED HERE: Handle the new UserShort object***
+            user_short = followers.get(uid)
+            username = user_short.username if user_short else f'UserID: {uid}'
             print(f"Attempting to remove follower: {username} ({uid})")
             if cl.user_remove_follower(uid):
                 log_action(conn, "remove", uid, username)
@@ -187,7 +178,6 @@ def run_sync():
         if not summary_log:
             summary_log.append("No actions taken.")
 
-        # --- Final logging for success ---
         sys.stdout = old_stdout
         final_summary = " ".join(summary_log)
         final_details = captured_output.getvalue()
@@ -195,7 +185,6 @@ def run_sync():
         log_run_history("SUCCESS", final_summary, final_details)
 
     except Exception as e:
-        # --- Final logging for failure ---
         sys.stdout = old_stdout
         error_message = f"ERROR: {type(e).__name__} - {e}"
         print(error_message)
