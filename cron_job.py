@@ -112,7 +112,8 @@ def run_sync():
         user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
         print("Fetching account information...")
-        account_info = cl.user_info(user_id).dict()
+        # ***FIX APPLIED HERE: .dict() changed to .model_dump()***
+        account_info = cl.user_info(user_id).model_dump()
         stats = {
             "username": account_info["username"],
             "follower_count": account_info["follower_count"],
