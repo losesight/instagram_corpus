@@ -14,14 +14,14 @@ from requests.exceptions import ProxyError
 ACCOUNT_USERNAME = os.getenv("ACCOUNT_USERNAME")
 ACCOUNT_PASSWORD = os.getenv("ACCOUNT_PASSWORD")
 PROXY_URL = os.getenv("PROXY_URL")
-# NEW: Read the whitelist from an environment variable (comma-separated list)
 WHITELIST_USERS = os.getenv("WHITELIST", "").split(',')
 
 # --- PATHS FOR RAILWAY'S PERSISTENT STORAGE ---
 DATA_DIR = "/data"
 DB_PATH = os.path.join(DATA_DIR, "activity.db")
 STATS_FILE = os.path.join(DATA_DIR, "latest_stats.json")
-SESSION_FILE = os.path.join(DATA_DIR, f"{ACCOUNT_USERNAME}_session.json")
+# Important: Ensure ACCOUNT_USERNAME is set, or this will fail.
+SESSION_FILE = os.path.join(DATA_DIR, f"{ACCOUNT_USERNAME}_session.json") if ACCOUNT_USERNAME else None
 
 # --- SAFETY SETTINGS ---
 MIN_DELAY_SECONDS = 45
@@ -39,7 +39,7 @@ def init_db():
             user_id TEXT NOT NULL, username TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # NEW: Table for logging each cron job run
+    # Table for logging each cron job run
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS run_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, run_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -67,9 +67,9 @@ def log_run_history(status, summary, details):
     conn.close()
 
 def run_sync():
-    """Main logic for syncing followers, now with enhanced logging and features."""
-    if not all([ACCOUNT_USERNAME, ACCOUNT_PASSWORD, PROXY_URL]):
-        print("CRITICAL ERROR: Missing one or more environment variables.")
+    """Main logic for syncing followers, using a persistent session file."""
+    if not all([ACCOUNT_USERNAME, ACCOUNT_PASSWORD, PROXY_URL, SESSION_FILE]):
+        print("CRITICAL ERROR: Missing ACCOUNT_USERNAME, ACCOUNT_PASSWORD, or PROXY_URL environment variable.")
         return
 
     summary_log = []
@@ -79,24 +79,38 @@ def run_sync():
     sys.stdout = captured_output = io.StringIO()
 
     try:
+        # --- NEW ROBUST SESSION HANDLING LOGIC ---
+
+        # 1. On the very first run, create the session file if it doesn't exist.
+        if not os.path.exists(SESSION_FILE):
+            print("Session file not found. Attempting to create from environment variable...")
+            session_json_data = os.getenv("INSTAGRAM_SESSION_JSON")
+            if session_json_data:
+                with open(SESSION_FILE, 'w') as f:
+                    f.write(session_json_data)
+                print("Successfully created session file from INSTAGRAM_SESSION_JSON variable.")
+            else:
+                # This error will only happen if the session file is gone AND the variable is not set.
+                raise Exception("CRITICAL: Session file is missing and INSTAGRAM_SESSION_JSON variable is not set.")
+
+        # 2. Now that the file is guaranteed to exist, initialize the client and use it.
         print(f"--- Starting Sync Job at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
         cl = Client()
         cl.set_proxy(PROXY_URL)
 
-        if os.path.exists(SESSION_FILE):
-            print(f"Loading session from {SESSION_FILE}...")
-            cl.load_settings(SESSION_FILE)
-            cl.login(ACCOUNT_USERNAME, ACCOUNT_PASSWORD)
-        else:
-            print("No session file. Performing fresh login...")
-            cl.login(ACCOUNT_USERNAME, ACCOUNT_PASSWORD)
+        print(f"Loading session from {SESSION_FILE}...")
+        cl.load_settings(SESSION_FILE)
         
-        cl.dump_settings(SESSION_FILE)
-        print("Session is valid and saved.")
+        # 3. Perform a login to verify the session is still valid.
+        # This will refresh the session if needed without requiring 2FA.
+        cl.login(ACCOUNT_USERNAME, ACCOUNT_PASSWORD)
+        cl.dump_settings(SESSION_FILE) # Save the potentially refreshed session
+        print("Session is valid and ready.")
+        
+        # --- SCRIPT CONTINUES AS NORMAL ---
         
         user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
-        # --- NEW: Get and save latest account stats ---
         print("Fetching account information...")
         account_info = cl.user_info(user_id).dict()
         stats = {
@@ -110,7 +124,7 @@ def run_sync():
         print(f"Stats saved: {stats['follower_count']} followers, {stats['following_count']} following.")
         summary_log.append(f"Stats: {stats['follower_count']} followers, {stats['following_count']} following.")
 
-        # --- NEW: Whitelist Logic ---
+        # Whitelist Logic
         whitelist_ids = set()
         if WHITELIST_USERS and WHITELIST_USERS[0] != '':
             print(f"Processing whitelist: {WHITELIST_USERS}")
@@ -131,8 +145,6 @@ def run_sync():
         following_set = set(following.keys())
 
         users_to_unfollow_initial = following_set - followers_set
-        
-        # --- NEW: Exclude whitelisted users from the unfollow list ---
         users_to_unfollow = users_to_unfollow_initial - whitelist_ids
         whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
 
@@ -143,7 +155,7 @@ def run_sync():
         print(f"  > {whitelisted_spared_count} users spared by whitelist.")
         print(f"  > {len(users_to_remove)} followers to remove.")
 
-        conn = sqlite3.connect(DB_PATH) # Open one connection for all actions
+        conn = sqlite3.connect(DB_PATH)
         
         # UNFOLLOW LOGIC
         unfollowed_count = 0
@@ -175,7 +187,7 @@ def run_sync():
             summary_log.append("No actions taken.")
 
         # --- Final logging for success ---
-        sys.stdout = old_stdout # Restore standard output
+        sys.stdout = old_stdout
         final_summary = " ".join(summary_log)
         final_details = captured_output.getvalue()
         print(final_summary)
@@ -183,10 +195,9 @@ def run_sync():
 
     except Exception as e:
         # --- Final logging for failure ---
-        sys.stdout = old_stdout # Restore standard output
+        sys.stdout = old_stdout
         error_message = f"ERROR: {type(e).__name__} - {e}"
         print(error_message)
-        # Also capture any logs that happened before the crash
         final_details = captured_output.getvalue() + f"\n\n--- SCRIPT FAILED ---\n{error_message}"
         log_run_history("ERROR", error_message, final_details)
 
