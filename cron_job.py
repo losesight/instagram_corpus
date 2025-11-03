@@ -76,8 +76,8 @@ def run_sync():
     summary_log = []
     
     # --- Capture all print() statements for detailed logging ---
-    old_stdout = sys.stdout
-    sys.stdout = captured_output = io.StringIO()
+    # old_stdout = sys.stdout
+    # sys.stdout = captured_output = io.StringIO()
     print("D")
     try:
         # --- ROBUST SESSION HANDLING LOGIC ---
@@ -180,18 +180,18 @@ def run_sync():
         if not summary_log:
             summary_log.append("No actions taken.")
 
-        sys.stdout = old_stdout
-        final_summary = " ".join(summary_log)
-        final_details = captured_output.getvalue()
-        print(final_summary)
-        log_run_history("SUCCESS", final_summary, final_details)
+        # sys.stdout = old_stdout
+        # final_summary = " ".join(summary_log)
+        # final_details = captured_output.getvalue()
+        print(summary_log)
+        # log_run_history("SUCCESS", final_summary, final_details)
 
     except Exception as e:
-        sys.stdout = old_stdout
-        error_message = f"ERROR: {type(e).__name__} - {e}"
-        print(error_message)
-        final_details = captured_output.getvalue() + f"\n\n--- SCRIPT FAILED ---\n{error_message}"
-        log_run_history("ERROR", error_message, final_details)
+        # sys.stdout = old_stdout
+        # error_message = f"ERROR: {type(e).__name__} - {e}"
+        print(e)
+        # final_details = captured_output.getvalue() + f"\n\n--- SCRIPT FAILED ---\n{error_message}"
+        # log_run_history("ERROR", error_message, final_details)
 
     finally:
         print("--- Cron job finished. ---")
