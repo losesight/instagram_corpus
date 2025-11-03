@@ -67,6 +67,7 @@ def log_run_history(status, summary, details):
     conn.close()
 
 def run_sync():
+    print("C")
     """Main logic for syncing followers, using a persistent session file."""
     if not all([ACCOUNT_USERNAME, ACCOUNT_PASSWORD, PROXY_URL, SESSION_FILE]):
         print("CRITICAL ERROR: Missing ACCOUNT_USERNAME, ACCOUNT_PASSWORD, or PROXY_URL environment variable.")
@@ -77,7 +78,7 @@ def run_sync():
     # --- Capture all print() statements for detailed logging ---
     old_stdout = sys.stdout
     sys.stdout = captured_output = io.StringIO()
-
+    print("D")
     try:
         # --- ROBUST SESSION HANDLING LOGIC ---
         if not os.path.exists(SESSION_FILE):
@@ -195,7 +196,8 @@ def run_sync():
     finally:
         print("--- Cron job finished. ---")
 
-
+print("A")
 if __name__ == "__main__":
+    print("B")
     init_db()
     run_sync()
