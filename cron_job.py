@@ -102,6 +102,7 @@ def run_sync():
         user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
         print("Fetching account information...")
+        # FIX: Use .model_dump() for Pydantic V2 compatibility
         account_info = cl.user_info(user_id).model_dump()
         stats = {
             "username": account_info["username"],
@@ -148,7 +149,7 @@ def run_sync():
         # UNFOLLOW LOGIC
         unfollowed_count = 0
         for uid in list(users_to_unfollow):
-            # ***FIX APPLIED HERE: Handle the new UserShort object***
+            # FIX: Handle the modern UserShort object, not a dictionary
             user_short = following.get(uid)
             username = user_short.username if user_short else f'UserID: {uid}'
             print(f"Attempting to unfollow: {username} ({uid})")
@@ -162,7 +163,7 @@ def run_sync():
         # REMOVE FOLLOWER LOGIC
         removed_count = 0
         for uid in list(users_to_remove):
-            # ***FIX APPLIED HERE: Handle the new UserShort object***
+            # FIX: Handle the modern UserShort object, not a dictionary
             user_short = followers.get(uid)
             username = user_short.username if user_short else f'UserID: {uid}'
             print(f"Attempting to remove follower: {username} ({uid})")
