@@ -7,7 +7,7 @@ import io
 import sys
 from datetime import datetime
 from instagrapi import Client
-from instagrapi.exceptions import BadPassword, ChallengeRequired, ClientError
+from instagrapi.exceptions import BadPassword, ChallengeRequired, ClientError, JSONDecodeError # Added JSONDecodeError
 from requests.exceptions import ProxyError
 
 # --- CONFIGURATION (Read from Railway Environment Variables) ---
@@ -20,7 +20,6 @@ WHITELIST_USERS = os.getenv("WHITELIST", "").split(',')
 DATA_DIR = "/data"
 DB_PATH = os.path.join(DATA_DIR, "activity.db")
 STATS_FILE = os.path.join(DATA_DIR, "latest_stats.json")
-# Important: Ensure ACCOUNT_USERNAME is set, or this will fail.
 SESSION_FILE = os.path.join(DATA_DIR, f"{ACCOUNT_USERNAME}_session.json") if ACCOUNT_USERNAME else None
 
 # --- SAFETY SETTINGS ---
@@ -32,14 +31,12 @@ def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Main actions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS actions (
             id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT NOT NULL,
             user_id TEXT NOT NULL, username TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Table for logging each cron job run
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS run_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, run_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -67,7 +64,6 @@ def log_run_history(status, summary, details):
     conn.close()
 
 def run_sync():
-    print("C")
     """Main logic for syncing followers, using a persistent session file."""
     if not all([ACCOUNT_USERNAME, ACCOUNT_PASSWORD, PROXY_URL, SESSION_FILE]):
         print("CRITICAL ERROR: Missing ACCOUNT_USERNAME, ACCOUNT_PASSWORD, or PROXY_URL environment variable.")
@@ -75,12 +71,11 @@ def run_sync():
 
     summary_log = []
     
-    # --- Capture all print() statements for detailed logging ---
-    # old_stdout = sys.stdout
-    # sys.stdout = captured_output = io.StringIO()
-    print("D")
+    # Restoring proper logging to capture all output for the run_log table
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = io.StringIO()
+    
     try:
-        # --- ROBUST SESSION HANDLING LOGIC ---
         if not os.path.exists(SESSION_FILE):
             print("Session file not found. Attempting to create from environment variable...")
             session_json_data = os.getenv("INSTAGRAM_SESSION_JSON")
@@ -103,7 +98,6 @@ def run_sync():
         user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
         print("Fetching account information...")
-        # FIX: Use .model_dump() for Pydantic V2 compatibility
         account_info = cl.user_info(user_id).model_dump()
         stats = {
             "username": account_info["username"],
@@ -134,7 +128,6 @@ def run_sync():
 
         followers_set = set(followers.keys())
         following_set = set(following.keys())
-
         users_to_unfollow_initial = following_set - followers_set
         users_to_unfollow = users_to_unfollow_initial - whitelist_ids
         whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
@@ -147,31 +140,35 @@ def run_sync():
 
         conn = sqlite3.connect(DB_PATH)
         
-        # UNFOLLOW LOGIC
         unfollowed_count = 0
         for uid in list(users_to_unfollow):
-            # FIX: Handle the modern UserShort object, not a dictionary
-            user_short = following.get(uid)
-            username = user_short.username if user_short else f'UserID: {uid}'
-            print(f"Attempting to unfollow: {username} ({uid})")
-            if cl.user_unfollow(uid):
-                log_action(conn, "unfollow", uid, username)
-                unfollowed_count += 1
-            time.sleep(random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS))
+            try:
+                user_short = following.get(uid)
+                username = user_short.username if user_short else f'UserID: {uid}'
+                print(f"Attempting to unfollow: {username} ({uid})")
+                if cl.user_unfollow(uid):
+                    log_action(conn, "unfollow", uid, username)
+                    unfollowed_count += 1
+                time.sleep(random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS))
+            except JSONDecodeError as e:
+                print(f"!! WARN: Received a bad response from proxy while unfollowing {uid}. Skipping. Error: {e}")
+                continue # Move to the next user
         if unfollowed_count > 0:
             summary_log.append(f"Unfollowed {unfollowed_count} users.")
 
-        # REMOVE FOLLOWER LOGIC
         removed_count = 0
         for uid in list(users_to_remove):
-            # FIX: Handle the modern UserShort object, not a dictionary
-            user_short = followers.get(uid)
-            username = user_short.username if user_short else f'UserID: {uid}'
-            print(f"Attempting to remove follower: {username} ({uid})")
-            if cl.user_remove_follower(uid):
-                log_action(conn, "remove", uid, username)
-                removed_count += 1
-            time.sleep(random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS))
+            try:
+                user_short = followers.get(uid)
+                username = user_short.username if user_short else f'UserID: {uid}'
+                print(f"Attempting to remove follower: {username} ({uid})")
+                if cl.user_remove_follower(uid):
+                    log_action(conn, "remove", uid, username)
+                    removed_count += 1
+                time.sleep(random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS))
+            except JSONDecodeError as e:
+                print(f"!! WARN: Received a bad response from proxy while removing {uid}. Skipping. Error: {e}")
+                continue # Move to the next user
         if removed_count > 0:
             summary_log.append(f"Removed {removed_count} followers.")
 
@@ -180,24 +177,22 @@ def run_sync():
         if not summary_log:
             summary_log.append("No actions taken.")
 
-        # sys.stdout = old_stdout
-        # final_summary = " ".join(summary_log)
-        # final_details = captured_output.getvalue()
-        print(summary_log)
-        # log_run_history("SUCCESS", final_summary, final_details)
+        sys.stdout = old_stdout
+        final_summary = " ".join(summary_log)
+        final_details = captured_output.getvalue()
+        print(final_summary)
+        log_run_history("SUCCESS", final_summary, final_details)
 
     except Exception as e:
-        # sys.stdout = old_stdout
-        # error_message = f"ERROR: {type(e).__name__} - {e}"
-        print(e)
-        # final_details = captured_output.getvalue() + f"\n\n--- SCRIPT FAILED ---\n{error_message}"
-        # log_run_history("ERROR", error_message, final_details)
+        sys.stdout = old_stdout
+        error_message = f"ERROR: {type(e).__name__} - {e}"
+        print(error_message)
+        final_details = captured_output.getvalue() + f"\n\n--- SCRIPT FAILED ---\n{error_message}"
+        log_run_history("ERROR", error_message, final_details)
 
     finally:
         print("--- Cron job finished. ---")
 
-print("A")
 if __name__ == "__main__":
-    print("B")
     init_db()
     run_sync()
