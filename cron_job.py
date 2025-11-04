@@ -16,7 +16,6 @@ ACCOUNT_USERNAME = os.getenv("ACCOUNT_USERNAME")
 ACCOUNT_PASSWORD = os.getenv("ACCOUNT_PASSWORD")
 PROXY_URL = os.getenv("PROXY_URL")
 WHITELIST_USERS = os.getenv("WHITELIST", "").split(',')
-# NEW: Read the action mode for dashboard control. Defaults to 'all' for cron job.
 ACTION_MODE = os.getenv("ACTION_MODE", "all")
 
 # --- PATHS FOR RAILWAY'S PERSISTENT STORAGE ---
@@ -34,7 +33,6 @@ def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # MODIFIED: Added profile_pic_url column to store image URLs
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS actions (
             id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT NOT NULL,
@@ -52,7 +50,6 @@ def init_db():
     conn.close()
     print("Database initialized/verified.")
 
-# MODIFIED: Upgraded to accept and store profile_pic_url
 def log_action(conn, action_type, user_id, username, profile_pic_url):
     """Logs an individual action (unfollow/remove) to the database."""
     cursor = conn.cursor()
@@ -166,7 +163,6 @@ def run_sync():
         whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
         users_to_remove = followers_set - following_set
 
-        # NEW: Determine which actions to run based on the ACTION_MODE variable
         do_unfollow = ACTION_MODE in ['all', 'unfollow']
         do_remove = ACTION_MODE in ['all', 'remove']
 
@@ -190,9 +186,11 @@ def run_sync():
             for uid in list(users_to_unfollow):
                 try:
                     user_short = following.get(uid)
-                    # MODIFIED: Extract profile pic url and handle missing data
                     username = user_short.username if user_short else f'UserID: {uid}'
-                    profile_pic_url = user_short.profile_pic_url if user_short else None
+                    
+                    # ***FIX APPLIED HERE: Convert HttpUrl to string before saving***
+                    profile_pic_url_obj = user_short.profile_pic_url if user_short else None
+                    profile_pic_url = str(profile_pic_url_obj) if profile_pic_url_obj else None
                     
                     msg = f"Attempting to unfollow: {username} ({uid})"
                     print(msg)
@@ -215,9 +213,11 @@ def run_sync():
             for uid in list(users_to_remove):
                 try:
                     user_short = followers.get(uid)
-                    # MODIFIED: Extract profile pic url and handle missing data
                     username = user_short.username if user_short else f'UserID: {uid}'
-                    profile_pic_url = user_short.profile_pic_url if user_short else None
+
+                    # ***FIX APPLIED HERE: Convert HttpUrl to string before saving***
+                    profile_pic_url_obj = user_short.profile_pic_url if user_short else None
+                    profile_pic_url = str(profile_pic_url_obj) if profile_pic_url_obj else None
                     
                     msg = f"Attempting to remove follower: {username} ({uid})"
                     print(msg)
