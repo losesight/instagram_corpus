@@ -71,7 +71,6 @@ def run_sync():
         return
 
     summary_log = []
-    # ***FIXED LOGGING HERE: Use a simple list instead of redirecting stdout***
     run_details_log = []
     
     try:
@@ -129,7 +128,53 @@ def run_sync():
         run_details_log.append(msg)
         summary_log.append(f"Stats: {stats['follower_count']} followers, {stats['following_count']} following.")
 
-        # ... (The rest of your logic remains the same, but we add messages to the list) ...
+        whitelist_ids = set()
+        if WHITELIST_USERS and WHITELIST_USERS[0] != '':
+            msg = f"Processing whitelist: {WHITELIST_USERS}"
+            print(msg)
+            run_details_log.append(msg)
+            for username in WHITELIST_USERS:
+                try:
+                    user_id_w = cl.user_id_from_username(username.strip())
+                    whitelist_ids.add(user_id_w)
+                    msg = f"  > Whitelisted user '{username}' (ID: {user_id_w})"
+                    print(msg)
+                    run_details_log.append(msg)
+                except Exception as e:
+                    msg = f"  > Could not find whitelisted user '{username}': {e}"
+                    print(msg)
+                    run_details_log.append(msg)
+        
+        # *** MISSING CODE RESTORED HERE ***
+        msg = "\nFetching followers and following lists..."
+        print(msg)
+        run_details_log.append(msg)
+        followers = cl.user_followers(user_id)
+        following = cl.user_following(user_id)
+        msg = f"Found {len(followers)} followers and {len(following)} following."
+        print(msg)
+        run_details_log.append(msg)
+
+        followers_set = set(followers.keys())
+        following_set = set(following.keys())
+        users_to_unfollow_initial = following_set - followers_set
+        users_to_unfollow = users_to_unfollow_initial - whitelist_ids
+        whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
+        users_to_remove = followers_set - following_set
+
+        msg = f"\nAnalysis Complete:"
+        print(msg)
+        run_details_log.append(msg)
+        msg = f"  > {len(users_to_unfollow)} users to unfollow."
+        print(msg)
+        run_details_log.append(msg)
+        msg = f"  > {whitelisted_spared_count} users spared by whitelist."
+        print(msg)
+        run_details_log.append(msg)
+        msg = f"  > {len(users_to_remove)} followers to remove."
+        print(msg)
+        run_details_log.append(msg)
+        # *** END OF RESTORED CODE ***
 
         conn = sqlite3.connect(DB_PATH)
         
@@ -178,7 +223,6 @@ def run_sync():
         if not summary_log:
             summary_log.append("No actions taken.")
 
-        # ***FIXED LOGGING HERE: Join the list of details instead of using captured output***
         final_summary = " ".join(summary_log)
         final_details = "\n".join(run_details_log)
         print(final_summary)
