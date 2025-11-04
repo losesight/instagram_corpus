@@ -1,3 +1,8 @@
+# For the cron job (brilliant-blessing)
 instagrapi @ git+https://github.com/subzeroid/instagrapi@396aba395106d4253739f52ec8dab6c41379abdb
+
+# For the web API (instagram_corpus)
 Flask
 gunicorn
+requests
+flask-cors
