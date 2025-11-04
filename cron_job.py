@@ -7,7 +7,10 @@ import io
 import sys
 from datetime import datetime
 from instagrapi import Client
-from instagrapi.exceptions import BadPassword, ChallengeRequired, ClientError, JSONDecodeError # Added JSONDecodeError
+# ***FIXED IMPORT HERE***: Import JSONDecodeError from the standard json library
+from json import JSONDecodeError
+# ***REMOVED from this line***:
+from instagrapi.exceptions import BadPassword, ChallengeRequired, ClientError
 from requests.exceptions import ProxyError
 
 # --- CONFIGURATION (Read from Railway Environment Variables) ---
