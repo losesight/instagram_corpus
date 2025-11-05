@@ -3,7 +3,7 @@ import sqlite3
 import json
 import requests
 from flask import Flask, jsonify, request, session
-from flask_cors import CORS # Import the CORS library
+from flask_cors import CORS
 
 app = Flask(__name__)
 
@@ -12,14 +12,19 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
-RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID") # ID of the cron service
+RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 DB_PATH = "/data/activity.db"
 STATS_FILE = "/data/latest_stats.json"
 
+# *** NEW COOKIE CONFIGURATION ***
+# This tells Flask to set the 'SameSite' attribute to 'None', which is required for cross-domain cookies.
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+# This tells Flask that the cookie should only be sent over HTTPS.
+app.config['SESSION_COOKIE_SECURE'] = True
+
 # --- CORS SETUP ---
-# This allows your Next.js app (running on FRONTEND_URL) to make requests to this API
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL}}, supports_credentials=True)
 
 def get_db_connection():
@@ -28,9 +33,8 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- API ENDPOINTS ---
+# --- API ENDPOINTS (No changes needed below this line) ---
 
-# 1. Login Endpoint
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -43,13 +47,11 @@ def login():
     else:
         return jsonify({"error": "Incorrect password"}), 401
 
-# 2. Logout Endpoint
 @app.route('/api/logout', methods=['POST'])
 def logout():
     session.pop('logged_in', None)
     return jsonify({"message": "Logout successful"}), 200
 
-# 3. Check Session Status Endpoint
 @app.route('/api/check-auth')
 def check_auth():
     if session.get('logged_in'):
@@ -57,18 +59,15 @@ def check_auth():
     else:
         return jsonify({"logged_in": False}), 401
 
-# 4. Endpoint to get all dashboard data
 @app.route('/api/dashboard-data')
 def dashboard_data():
     if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
 
-    # Load stats
     stats = {"follower_count": "N/A", "following_count": "N/A", "ratio": "N/A"}
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, 'r') as f:
             stats = json.load(f)
-            # Add ratio calculation if needed
     
     if not os.path.exists(DB_PATH):
         return jsonify({ "stats": stats, "db_not_found": True })
@@ -86,7 +85,6 @@ def dashboard_data():
         "run_logs": [dict(row) for row in run_logs]
     })
 
-# 5. Endpoint to trigger a job
 @app.route('/api/trigger-job', methods=['POST'])
 def trigger_job():
     if not session.get('logged_in'):
