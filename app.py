@@ -18,7 +18,6 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 DB_PATH = "/data/activity.db"
 STATS_FILE = "/data/latest_stats.json"
 
-# --- CORS SETUP ---
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL}})
 
 valid_session_token = None
@@ -37,11 +36,15 @@ def is_authorized():
 
 # --- API ENDPOINTS ---
 
-# *** THE ONLY CHANGE IS ON THIS LINE ***
 @app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
-    # The OPTIONS request will be handled automatically by Flask-CORS.
-    # If the request is a POST, the rest of the function will run.
+    # *** THIS IS THE FIX ***
+    # The OPTIONS request is handled automatically by Flask-CORS.
+    # We just need to stop our code from crashing it.
+    if request.method == 'OPTIONS':
+        return '', 200 # Return a simple OK response for the preflight request.
+
+    # If it's a POST request, the rest of the code will run as intended.
     global valid_session_token
     data = request.get_json()
     if not data or 'password' not in data:
@@ -53,8 +56,10 @@ def login():
     else:
         return jsonify({"error": "Incorrect password"}), 401
 
-@app.route('/api/logout', methods=['POST'])
+@app.route('/api/logout', methods=['POST', 'OPTIONS'])
 def logout():
+    if request.method == 'OPTIONS':
+        return '', 200
     global valid_session_token
     valid_session_token = None
     return jsonify({"message": "Logout successful"}), 200
@@ -85,8 +90,11 @@ def dashboard_data():
         "run_logs": [dict(row) for row in run_logs]
     })
 
-@app.route('/api/trigger-job', methods=['POST'])
+@app.route('/api/trigger-job', methods=['POST', 'OPTIONS'])
 def trigger_job():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     if not is_authorized():
         return jsonify({"error": "Unauthorized"}), 401
         
