@@ -2,7 +2,7 @@ import os
 import sqlite3
 import json
 import requests
-import secrets # Used for generating secure random tokens
+import secrets
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -12,51 +12,43 @@ app = Flask(__name__)
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
-RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID") # ID of the cron service
+RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 DB_PATH = "/data/activity.db"
 STATS_FILE = "/data/latest_stats.json"
 
 # --- CORS SETUP ---
-# Allows your Next.js app to make requests to this API
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL}})
 
-# --- TOKEN-BASED AUTH ---
-# This is a simple, in-memory store for our one valid session token.
-# In a larger app, this would be a database.
 valid_session_token = None
 
 def get_db_connection():
-    """Connects to the database."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-# A helper function to check the Authorization header on protected routes
 def is_authorized():
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         return False
-    
-    # Extract the token from the "Bearer <token>" header
     token = auth_header.split(' ')[1]
-    # Check if the provided token matches our valid one
     return token == valid_session_token
 
 # --- API ENDPOINTS ---
 
-@app.route('/api/login', methods=['POST'])
+# *** THE ONLY CHANGE IS ON THIS LINE ***
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
+    # The OPTIONS request will be handled automatically by Flask-CORS.
+    # If the request is a POST, the rest of the function will run.
     global valid_session_token
     data = request.get_json()
     if not data or 'password' not in data:
         return jsonify({"error": "Password is required"}), 400
     
     if data['password'] == DASHBOARD_PASSWORD:
-        # If password is correct, generate a new secure token
         valid_session_token = secrets.token_hex(16)
-        # Send the token back to the frontend to be stored
         return jsonify({"message": "Login successful", "token": valid_session_token}), 200
     else:
         return jsonify({"error": "Incorrect password"}), 401
@@ -64,7 +56,6 @@ def login():
 @app.route('/api/logout', methods=['POST'])
 def logout():
     global valid_session_token
-    # Invalidate the current token
     valid_session_token = None
     return jsonify({"message": "Logout successful"}), 200
 
@@ -73,7 +64,6 @@ def dashboard_data():
     if not is_authorized():
         return jsonify({"error": "Unauthorized"}), 401
 
-    # Load stats
     stats = {"follower_count": "N/A", "following_count": "N/A", "ratio": "N/A"}
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, 'r') as f:
