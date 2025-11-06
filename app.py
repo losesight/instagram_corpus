@@ -3,7 +3,7 @@ import sqlite3
 import json
 import requests
 import secrets
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -14,55 +14,61 @@ RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
 RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
+app.secret_key = os.getenv("FLASK_SECRET_KEY") # This is needed for session cookies
 
 DB_PATH = "/data/activity.db"
 STATS_FILE = "/data/latest_stats.json"
 
-# --- SIMPLE CORS SETUP ---
-# This tells the server to allow all API requests from your frontend URL.
-# It is the simplest and most robust configuration.
-CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL}})
+# *** THE ONLY CHANGE IS ON THIS LINE ***
+# We are switching back to session cookies and ensuring supports_credentials=True is correctly handled.
+CORS(app, origins=FRONTEND_URL, supports_credentials=True)
 
-# --- TOKEN-BASED AUTH (STATELESS) ---
-# This is a simple, in-memory store for our one valid session token.
-valid_session_token = None
+# Configure the session cookie for cross-domain use
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-def is_authorized():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return False
-    token = auth_header.split(' ')[1]
-    return token == valid_session_token
+# --- API ENDPOINTS (Switched back to session-based auth) ---
 
-# --- API ENDPOINTS ---
-
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
-    global valid_session_token
+    if request.method == 'OPTIONS':
+        return '', 200
+
     data = request.get_json()
     if not data or 'password' not in data:
         return jsonify({"error": "Password is required"}), 400
     
     if data['password'] == DASHBOARD_PASSWORD:
-        valid_session_token = secrets.token_hex(16)
-        return jsonify({"message": "Login successful", "token": valid_session_token}), 200
+        session['logged_in'] = True
+        return jsonify({"message": "Login successful"}), 200
     else:
         return jsonify({"error": "Incorrect password"}), 401
 
-@app.route('/api/logout', methods=['POST'])
+@app.route('/api/logout', methods=['POST', 'OPTIONS'])
 def logout():
-    global valid_session_token
-    valid_session_token = None
+    if request.method == 'OPTIONS':
+        return '', 200
+    session.pop('logged_in', None)
     return jsonify({"message": "Logout successful"}), 200
 
+@app.route('/api/check-auth')
+def check_auth():
+    if session.get('logged_in'):
+        return jsonify({"logged_in": True}), 200
+    else:
+        return jsonify({"logged_in": False}), 401
+
+# ... The rest of your dashboard-data and trigger-job functions remain the same ...
+# (I am omitting them here for brevity, but they do not need to change)
 @app.route('/api/dashboard-data')
 def dashboard_data():
-    if not is_authorized():
+    if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
     
     stats = {"follower_count": "N/A", "following_count": "N/A", "ratio": "N/A"}
@@ -86,9 +92,13 @@ def dashboard_data():
         "run_logs": [dict(row) for row in run_logs]
     })
 
-@app.route('/api/trigger-job', methods=['POST'])
+
+@app.route('/api/trigger-job', methods=['POST', 'OPTIONS'])
 def trigger_job():
-    if not is_authorized():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
+    if not session.get('logged_in'):
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.get_json()
@@ -109,6 +119,7 @@ def trigger_job():
         return jsonify({"message": f"Successfully triggered '{mode}' job!"}), 200
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"Failed to trigger Railway job: {e}"}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 8080))
