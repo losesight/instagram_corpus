@@ -104,8 +104,11 @@ def run_sync():
         cl.load_settings(SESSION_FILE)
         cl.login(ACCOUNT_USERNAME, ACCOUNT_PASSWORD)
         cl.dump_settings(SESSION_FILE)
-        
-        msg = "Session is valid and ready."
+
+        if not cl.user_id:
+            raise Exception("LOGIN VALIDATION FAILED: instagrapi returned no user_id after login")
+
+        msg = f"Session is valid and ready for user_id {cl.user_id}."
         print(msg)
         run_details_log.append(msg)
         
