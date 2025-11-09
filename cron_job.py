@@ -112,7 +112,9 @@ def run_sync():
         print(msg)
         run_details_log.append(msg)
         
-        user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
+        user_id = cl.user_id
+        if not user_id:
+            user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
         msg = "Fetching account information..."
         print(msg)
