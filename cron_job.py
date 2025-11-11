@@ -119,8 +119,32 @@ def run_sync():
         msg = "Fetching account information..."
         print(msg)
         run_details_log.append(msg)
+
+        account_info = None
+        stats_source = None
+        try:
+            account_info = cl.user_info_v1(user_id).model_dump()
+            stats_source = "user_info_v1"
+        except Exception as primary_error:
+            msg = f"user_info_v1 failed ({primary_error}); retrying with user_info_by_username_v1."
+            print(msg)
+            run_details_log.append(msg)
+            try:
+                account_info = cl.user_info_by_username_v1(ACCOUNT_USERNAME).model_dump()
+                stats_source = "user_info_by_username_v1"
+            except Exception as username_error:
+                msg = f"user_info_by_username_v1 failed ({username_error}); retrying with user_info(use_cache=False)."
+                print(msg)
+                run_details_log.append(msg)
+                try:
+                    account_info = cl.user_info(user_id, use_cache=False).model_dump()
+                    stats_source = "user_info_fallback"
+                except Exception as final_error:
+                    raise Exception(f"Unable to fetch account info via any method: {final_error}")
         
-        account_info = cl.user_info(user_id).model_dump()
+        msg = f"Account info loaded via {stats_source}."
+        print(msg)
+        run_details_log.append(msg)
         stats = {
             "username": account_info["username"],
             "follower_count": account_info["follower_count"],
