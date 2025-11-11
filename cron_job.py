@@ -66,6 +66,35 @@ def log_run_history(status, summary, details):
     conn.commit()
     conn.close()
 
+def fetch_account_info_safe(client, user_id, username):
+    """Fetch account stats via private endpoints while tolerating missing fields."""
+    attempts = []
+    params = {
+        "is_prefetch": "false",
+        "entry_point": "self_profile",
+        "from_module": "self_profile",
+        "is_app_start": False,
+    }
+    try:
+        result = client.private_request(f"users/{user_id}/info/", params=params)
+        user_payload = result.get("user")
+        if user_payload:
+            return user_payload, "users_info"
+        attempts.append("users_info returned empty payload")
+    except Exception as exc:
+        attempts.append(f"users_info failed: {exc}")
+
+    try:
+        result = client.private_request(f"users/{username}/usernameinfo/")
+        user_payload = result.get("user")
+        if user_payload:
+            return user_payload, "usernameinfo"
+        attempts.append("usernameinfo returned empty payload")
+    except Exception as exc:
+        attempts.append(f"usernameinfo failed: {exc}")
+
+    raise Exception("Unable to fetch account info safely. Attempts:\n" + "\n".join(attempts))
+
 def run_sync():
     """Main logic for syncing followers, now with controllable modes."""
     if not all([ACCOUNT_USERNAME, ACCOUNT_PASSWORD, PROXY_URL, SESSION_FILE]):
@@ -120,28 +149,13 @@ def run_sync():
         print(msg)
         run_details_log.append(msg)
 
-        account_info = None
-        stats_source = None
-        try:
-            account_info = cl.user_info_v1(user_id).model_dump()
-            stats_source = "user_info_v1"
-        except Exception as primary_error:
-            msg = f"user_info_v1 failed ({primary_error}); retrying with user_info_by_username_v1."
-            print(msg)
-            run_details_log.append(msg)
-            try:
-                account_info = cl.user_info_by_username_v1(ACCOUNT_USERNAME).model_dump()
-                stats_source = "user_info_by_username_v1"
-            except Exception as username_error:
-                msg = f"user_info_by_username_v1 failed ({username_error}); retrying with user_info(use_cache=False)."
-                print(msg)
-                run_details_log.append(msg)
-                try:
-                    account_info = cl.user_info(user_id, use_cache=False).model_dump()
-                    stats_source = "user_info_fallback"
-                except Exception as final_error:
-                    raise Exception(f"Unable to fetch account info via any method: {final_error}")
-        
+        account_payload, stats_source = fetch_account_info_safe(cl, user_id, ACCOUNT_USERNAME)
+        account_info = {
+            "username": account_payload.get("username"),
+            "follower_count": account_payload.get("follower_count"),
+            "following_count": account_payload.get("following_count"),
+        }
+
         msg = f"Account info loaded via {stats_source}."
         print(msg)
         run_details_log.append(msg)
