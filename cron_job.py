@@ -11,6 +11,8 @@ from json import JSONDecodeError
 from instagrapi.exceptions import BadPassword, ChallengeRequired, ClientError
 from requests.exceptions import ProxyError
 
+from db_utils import fetch_next_run_request, DatabaseNotConfigured
+
 # --- CONFIGURATION (Read from Railway Environment Variables) ---
 ACCOUNT_USERNAME = os.getenv("ACCOUNT_USERNAME")
 ACCOUNT_PASSWORD = os.getenv("ACCOUNT_PASSWORD")
@@ -145,6 +147,21 @@ def run_sync():
         if not user_id:
             user_id = cl.user_id_from_username(ACCOUNT_USERNAME)
         
+        active_mode = ACTION_MODE
+        try:
+            request_override = fetch_next_run_request()
+            if request_override:
+                active_mode = request_override["mode"]
+                msg = f"Run override detected (request #{request_override['id']}): mode set to '{active_mode}'."
+            else:
+                msg = f"No pending run override found. Using ACTION_MODE '{active_mode}'."
+        except DatabaseNotConfigured:
+            msg = f"Postgres not configured; using ACTION_MODE '{active_mode}'."
+        except Exception as override_error:
+            msg = f"Failed to read run override (defaulting to '{active_mode}'): {override_error}"
+        print(msg)
+        run_details_log.append(msg)
+
         msg = "Fetching account information..."
         print(msg)
         run_details_log.append(msg)
@@ -206,10 +223,10 @@ def run_sync():
         whitelisted_spared_count = len(users_to_unfollow_initial) - len(users_to_unfollow)
         users_to_remove = followers_set - following_set
 
-        do_unfollow = ACTION_MODE in ['all', 'unfollow']
-        do_remove = ACTION_MODE in ['all', 'remove']
+        do_unfollow = active_mode in ['all', 'unfollow']
+        do_remove = active_mode in ['all', 'remove']
 
-        msg = f"\nAnalysis Complete (Mode: {ACTION_MODE}):"
+        msg = f"\nAnalysis Complete (Mode: {active_mode}):"
         print(msg)
         run_details_log.append(msg)
         msg = f"  > {len(users_to_unfollow)} users to unfollow. Will run: {do_unfollow}"
