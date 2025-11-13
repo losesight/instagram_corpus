@@ -113,8 +113,14 @@ def run_sync():
             run_details_log.append(msg)
             session_json_data = os.getenv("INSTAGRAM_SESSION_JSON")
             if session_json_data:
-                with open(SESSION_FILE, 'w') as f:
-                    f.write(session_json_data)
+                try:
+                    parsed_session = json.loads(session_json_data)
+                    with open(SESSION_FILE, 'w') as f:
+                        json.dump(parsed_session, f)
+                except json.JSONDecodeError:
+                    # Value was already raw JSON, just write it through
+                    with open(SESSION_FILE, 'w') as f:
+                        f.write(session_json_data)
                 msg = "Successfully created session file from INSTAGRAM_SESSION_JSON variable."
                 print(msg)
                 run_details_log.append(msg)
