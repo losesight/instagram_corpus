@@ -13,13 +13,14 @@ app = Flask(__name__)
 # --- CONFIGURATION ---
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
-RAILWAY_PROJECT_ID = os.getenv("RAILWAY_PROJECT_ID")
 RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
-RAILWAY_ENVIRONMENT_ID = os.getenv("RAILWAY_ENVIRONMENT_ID")
+RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID")
+RAILWAY_TOKEN_HEADER = os.getenv("RAILWAY_TOKEN_HEADER", "Authorization")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
-DB_PATH = "/data/activity.db"
-STATS_FILE = "/data/latest_stats.json"
+DATA_DIR = os.getenv("DATA_DIR", "/data")
+DB_PATH = os.path.join(DATA_DIR, "activity.db")
+STATS_FILE = os.path.join(DATA_DIR, "latest_stats.json")
 GRAPHQL_ENDPOINT = "https://backboard.railway.com/graphql/v2"
 ALLOWED_MODES = {"all", "unfollow", "remove"}
 
@@ -43,28 +44,27 @@ def is_authorized():
 
 
 def trigger_railway_deploy():
-    if not all([RAILWAY_API_TOKEN, RAILWAY_SERVICE_ID, RAILWAY_ENVIRONMENT_ID]):
+    if not all([RAILWAY_API_TOKEN, RAILWAY_DEPLOYMENT_ID]):
         raise RuntimeError("Railway API credentials are incomplete. Check environment variables.")
 
     query = """
-        mutation TriggerDeploy($serviceId: String!, $environmentId: String!) {
-            serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId) {
-                id
-            }
+        mutation Restart($deploymentId: String!) {
+            deploymentRestart(id: $deploymentId)
         }
     """
     payload = {
         "query": query,
         "variables": {
-            "serviceId": RAILWAY_SERVICE_ID,
-            "environmentId": RAILWAY_ENVIRONMENT_ID
+            "deploymentId": RAILWAY_DEPLOYMENT_ID
         }
     }
 
     headers = {
+        "Content-Type": "application/json",
         "Authorization": f"Bearer {RAILWAY_API_TOKEN}",
-        "Content-Type": "application/json"
     }
+    if RAILWAY_TOKEN_HEADER and RAILWAY_TOKEN_HEADER.lower() != "authorization":
+        headers[RAILWAY_TOKEN_HEADER] = RAILWAY_API_TOKEN
 
     response = requests.post(GRAPHQL_ENDPOINT, json=payload, headers=headers, timeout=20)
     if response.status_code != 200:
@@ -74,7 +74,10 @@ def trigger_railway_deploy():
     if 'errors' in body:
         raise RuntimeError(f"Railway API returned errors: {body['errors']}")
 
-    return body.get("data", {}).get("serviceInstanceDeploy", {}).get("id")
+    success = body.get("data", {}).get("deploymentRestart")
+    if success is not True:
+        raise RuntimeError(f"Unexpected Railway response: {body}")
+    return success
 
 @app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
@@ -129,12 +132,12 @@ def trigger_job():
         return jsonify({"error": f"Failed to record run request: {exc}"}), 500
 
     try:
-        deployment_id = trigger_railway_deploy()
+        restart_triggered = trigger_railway_deploy()
     except Exception as exc:
         return jsonify({"error": f"Failed to trigger Railway deploy: {exc}"}), 500
 
     return jsonify({
         "message": f"Run request queued for mode '{mode}'.",
         "request_id": request_id,
-        "deployment_id": deployment_id
+        "deployment_restart": restart_triggered
     })

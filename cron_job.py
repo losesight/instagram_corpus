@@ -20,8 +20,8 @@ PROXY_URL = os.getenv("PROXY_URL")
 WHITELIST_USERS = os.getenv("WHITELIST", "").split(',')
 ACTION_MODE = os.getenv("ACTION_MODE", "all")
 
-# --- PATHS FOR RAILWAY'S PERSISTENT STORAGE ---
-DATA_DIR = "/data"
+# --- PATHS FOR STORAGE (overridable for local testing) ---
+DATA_DIR = os.getenv("DATA_DIR", "/data")
 DB_PATH = os.path.join(DATA_DIR, "activity.db")
 STATS_FILE = os.path.join(DATA_DIR, "latest_stats.json")
 SESSION_FILE = os.path.join(DATA_DIR, f"{ACCOUNT_USERNAME}_session.json") if ACCOUNT_USERNAME else None
