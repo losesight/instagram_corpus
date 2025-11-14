@@ -2,7 +2,6 @@ import os
 import sqlite3
 import json
 import requests
-import secrets
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -11,7 +10,6 @@ from db_utils import enqueue_run_request, DatabaseNotConfigured
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD")
 RAILWAY_API_TOKEN = os.getenv("RAILWAY_API_TOKEN")
 RAILWAY_SERVICE_ID = os.getenv("RAILWAY_SERVICE_ID")
 RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID")
@@ -26,22 +24,10 @@ ALLOWED_MODES = {"all", "unfollow", "remove"}
 
 CORS(app, resources={r"/api/*": {"origins": FRONTEND_URL}})
 
-valid_session_token = None
-
-
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
-
-def is_authorized():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return False
-    token = auth_header.split(' ')[1]
-    return token == valid_session_token
-
 
 def trigger_railway_deploy():
     if not all([RAILWAY_API_TOKEN, RAILWAY_DEPLOYMENT_ID]):
@@ -79,21 +65,8 @@ def trigger_railway_deploy():
         raise RuntimeError(f"Unexpected Railway response: {body}")
     return success
 
-@app.route('/api/login', methods=['POST', 'OPTIONS'])
-def login():
-    if request.method == 'OPTIONS': return '', 200
-    global valid_session_token
-    data = request.get_json()
-    if data.get('password') == DASHBOARD_PASSWORD:
-        valid_session_token = secrets.token_hex(16)
-        return jsonify({"message": "Login successful", "token": valid_session_token}), 200
-    return jsonify({"error": "Incorrect password"}), 401
-
 @app.route('/api/dashboard-data')
 def dashboard_data():
-    if not is_authorized():
-        return jsonify({"error": "Unauthorized"}), 401
-    
     stats = {}
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, 'r') as f: stats = json.load(f)
@@ -115,9 +88,6 @@ def dashboard_data():
 def trigger_job():
     if request.method == 'OPTIONS':
         return '', 200
-
-    if not is_authorized():
-        return jsonify({"error": "Unauthorized"}), 401
 
     payload = request.get_json() or {}
     mode = payload.get("mode", "all")
